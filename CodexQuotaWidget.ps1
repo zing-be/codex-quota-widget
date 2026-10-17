@@ -106,7 +106,7 @@ public sealed class CodexQuotaWidgetClient : IDisposable
             if (!process.Start()) throw new InvalidOperationException("Could not start Codex CLI.");
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
-            Send("{\"id\":1,\"method\":\"initialize\",\"params\":{\"clientInfo\":{\"name\":\"codex-quota-desktop-widget\",\"version\":\"1.3.0\"},\"capabilities\":{\"experimentalApi\":true}}}");
+            Send("{\"id\":1,\"method\":\"initialize\",\"params\":{\"clientInfo\":{\"name\":\"codex-quota-desktop-widget\",\"version\":\"1.4.0\"},\"capabilities\":{\"experimentalApi\":true}}}");
             string initializeResponse = ReadResponse(1, timeoutMilliseconds);
             if (initializeResponse.IndexOf("\"error\"", StringComparison.Ordinal) >= 0)
                 throw new InvalidOperationException("Codex app-server initialization failed.");
@@ -421,6 +421,48 @@ function Set-QuotaLayout {
     $script:form.Size = [System.Drawing.Size]::new(328, $statusTop + 22)
 }
 
+function Get-StartupShortcutPath {
+    $startupDirectory = Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Startup'
+    return Join-Path $startupDirectory 'CodexQuotaWidget.lnk'
+}
+
+function Set-StartupShortcut {
+    param([bool]$Enabled)
+    $shortcutPath = Get-StartupShortcutPath
+
+    if (-not $Enabled) {
+        if (Test-Path -LiteralPath $shortcutPath) {
+            Remove-Item -LiteralPath $shortcutPath -Force
+        }
+        return
+    }
+
+    if ([string]::IsNullOrWhiteSpace($script:widgetScriptPath) -or -not (Test-Path -LiteralPath $script:widgetScriptPath)) {
+        throw '找不到小窗脚本，无法设置开机启动。'
+    }
+
+    $startupDirectory = Split-Path -Parent $shortcutPath
+    if (-not (Test-Path -LiteralPath $startupDirectory)) {
+        New-Item -ItemType Directory -Path $startupDirectory -Force | Out-Null
+    }
+
+    $powerShellPath = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+    $shell = $null
+    $shortcut = $null
+    try {
+        $shell = New-Object -ComObject WScript.Shell
+        $shortcut = $shell.CreateShortcut($shortcutPath)
+        $shortcut.TargetPath = $powerShellPath
+        $shortcut.Arguments = '-NoProfile -STA -WindowStyle Hidden -ExecutionPolicy Bypass -File "' + $script:widgetScriptPath + '"'
+        $shortcut.WorkingDirectory = Split-Path -Parent $script:widgetScriptPath
+        $shortcut.Description = 'Codex 额度小窗'
+        $shortcut.Save()
+    } finally {
+        if ($null -ne $shortcut) { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($shortcut) }
+        if ($null -ne $shell) { [void][Runtime.InteropServices.Marshal]::FinalReleaseComObject($shell) }
+    }
+}
+
 function Invoke-UsageUpdate {
     if ($script:isRefreshing) { return }
     try {
@@ -598,6 +640,7 @@ $script:client = $null
 $script:resetCreditCount = $null
 $script:resetCreditMenuItem = $null
 $script:pendingResetKey = $null
+$script:widgetScriptPath = $PSCommandPath
 $script:form = New-Object System.Windows.Forms.Form
 $script:form.Text = 'Codex 额度概览'
 $script:form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
@@ -702,7 +745,29 @@ $refreshMenuItem.Add_Click({ Invoke-UsageUpdate })
 $script:resetCreditMenuItem = $contextMenu.Items.Add('重置卡状态读取中…')
 $script:resetCreditMenuItem.Enabled = $false
 $script:resetCreditMenuItem.Add_Click({ Invoke-ResetCreditUse })
-$contextMenu.Add_Opening({ Update-ResetCreditMenuItem })
+$contextMenu.Items.Add('-') | Out-Null
+$script:autoStartMenuItem = $contextMenu.Items.Add('开机启动')
+$script:autoStartMenuItem.Checked = Test-Path -LiteralPath (Get-StartupShortcutPath)
+$script:autoStartMenuItem.Add_Click({
+    $enableStartup = -not (Test-Path -LiteralPath (Get-StartupShortcutPath))
+    try {
+        Set-StartupShortcut $enableStartup
+        $script:autoStartMenuItem.Checked = $enableStartup
+        $script:statusLabel.ForeColor = [System.Drawing.Color]::FromArgb(32, 126, 76)
+        $script:statusLabel.Text = if ($enableStartup) { '已加入开机启动' } else { '已取消开机启动' }
+        $script:toolTip.SetToolTip($script:statusLabel, $script:statusLabel.Text)
+    } catch {
+        $script:autoStartMenuItem.Checked = Test-Path -LiteralPath (Get-StartupShortcutPath)
+        $script:statusLabel.ForeColor = [System.Drawing.Color]::FromArgb(194, 67, 58)
+        $script:statusLabel.Text = '开机启动设置失败'
+        $script:form.AccessibleDescription = $_.Exception.Message
+        $script:toolTip.SetToolTip($script:statusLabel, $_.Exception.Message)
+    }
+})
+$contextMenu.Add_Opening({
+    Update-ResetCreditMenuItem
+    $script:autoStartMenuItem.Checked = Test-Path -LiteralPath (Get-StartupShortcutPath)
+})
 $topMostMenuItem = $contextMenu.Items.Add('置顶显示')
 $topMostMenuItem.Checked = $true
 $topMostMenuItem.Add_Click({
