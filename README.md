@@ -9,6 +9,7 @@ A compact, light Windows desktop widget for viewing Codex's five-hour and weekly
 - Uses a compact, translucent light interface. Drag the header, cards, or blank areas to move it.
 - Progress bars turn red below 10% remaining and amber at 50% or less.
 - Right-click to refresh, view available reset credits, use a reset credit, toggle always-on-top, or exit. Using a reset credit requires confirmation.
+- Enable or disable automatic startup from the right-click menu. It is off by default and uses a shortcut in the current Windows user's Startup folder.
 
 ## Requirements
 
@@ -28,7 +29,7 @@ The app-server API is experimental and may change with future Codex CLI releases
 
 ## 中文说明
 
-双击“启动 Codex 额度小窗.bat”即可启动。小窗按账号实际返回显示可用额度窗口；如果账号只有每周限额，就只显示每周额度卡片并自动收紧窗口高度。右键可刷新、查看或使用重置卡、切换置顶和退出。使用重置卡前会再次确认。详细说明见 [使用说明.md](使用说明.md)。
+双击“启动 Codex 额度小窗.bat”即可启动。小窗按账号实际返回显示可用额度窗口；如果账号只有每周限额，就只显示每周额度卡片并自动收紧窗口高度。右键可刷新、查看或使用重置卡、切换置顶、设置开机启动和退出。开机启动默认关闭，可以随时取消；使用重置卡前会再次确认。详细说明见 [使用说明.md](使用说明.md)。
 
 This is an unofficial community project and is not affiliated with OpenAI.
 
