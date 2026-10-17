@@ -106,7 +106,7 @@ public sealed class CodexQuotaWidgetClient : IDisposable
             if (!process.Start()) throw new InvalidOperationException("Could not start Codex CLI.");
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
-            Send("{\"id\":1,\"method\":\"initialize\",\"params\":{\"clientInfo\":{\"name\":\"codex-quota-desktop-widget\",\"version\":\"1.2.0\"},\"capabilities\":{\"experimentalApi\":true}}}");
+            Send("{\"id\":1,\"method\":\"initialize\",\"params\":{\"clientInfo\":{\"name\":\"codex-quota-desktop-widget\",\"version\":\"1.3.0\"},\"capabilities\":{\"experimentalApi\":true}}}");
             string initializeResponse = ReadResponse(1, timeoutMilliseconds);
             if (initializeResponse.IndexOf("\"error\"", StringComparison.Ordinal) >= 0)
                 throw new InvalidOperationException("Codex app-server initialization failed.");
@@ -386,6 +386,41 @@ function Set-QuotaCard {
     if ($Card.BarFill.Width -ge 4) { [CodexQuotaWidgetNative]::SetRoundedRegion($Card.BarFill, 2) }
 }
 
+function Set-QuotaLayout {
+    param($Primary, $Secondary)
+
+    $windowCards = @(
+        [pscustomobject]@{ Card = $script:cards[0]; Quota = $Primary }
+        [pscustomobject]@{ Card = $script:cards[1]; Quota = $Secondary }
+    )
+    $visibleCount = 0
+    foreach ($window in $windowCards) {
+        if ($null -eq $window.Quota) {
+            $window.Card.Panel.Visible = $false
+            continue
+        }
+
+        $window.Card.Panel.Visible = $true
+        $window.Card.Panel.Location = [System.Drawing.Point]::new(8, 21 + ($visibleCount * 78))
+        $visibleCount++
+    }
+
+    if ($visibleCount -eq 0) {
+        $emptyCard = $script:cards[0]
+        $emptyCard.Panel.Visible = $true
+        $emptyCard.Panel.Location = [System.Drawing.Point]::new(8, 21)
+        $emptyCard.Title.Text = '额度数据'
+        $emptyCard.Percent.Text = '--%'
+        $emptyCard.Reset.Text = '当前账号未返回额度窗口'
+        $emptyCard.BarFill.Width = 0
+        $visibleCount = 1
+    }
+
+    $statusTop = 100 + (($visibleCount - 1) * 78)
+    $script:statusLabel.Location = [System.Drawing.Point]::new(13, $statusTop)
+    $script:form.Size = [System.Drawing.Size]::new(328, $statusTop + 22)
+}
+
 function Invoke-UsageUpdate {
     if ($script:isRefreshing) { return }
     try {
@@ -465,6 +500,7 @@ function Complete-BackgroundOperation {
             $snapshot = Convert-UsageResponse $finished.Response
             Set-QuotaCard $script:cards[0] $snapshot.Primary
             Set-QuotaCard $script:cards[1] $snapshot.Secondary
+            Set-QuotaLayout $snapshot.Primary $snapshot.Secondary
             $script:resetCreditCount = $snapshot.ResetCreditCount
             Update-ResetCreditMenuItem
             $script:statusLabel.ForeColor = [System.Drawing.Color]::FromArgb(108, 117, 110)
