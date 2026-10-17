@@ -1,0 +1,8 @@
+*.log
+*.tmp
+*.lnk
+widget-startup.*
+.vs/
+*.user
+*.suo
+
