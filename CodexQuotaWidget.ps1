@@ -120,7 +120,7 @@ public sealed class CodexQuotaWidgetClient : IDisposable
             if (!process.Start()) throw new InvalidOperationException("Could not start Codex CLI.");
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
-            Send("{\"id\":1,\"method\":\"initialize\",\"params\":{\"clientInfo\":{\"name\":\"codex-quota-desktop-widget\",\"version\":\"1.5.0\"},\"capabilities\":{\"experimentalApi\":true}}}");
+            Send("{\"id\":1,\"method\":\"initialize\",\"params\":{\"clientInfo\":{\"name\":\"codex-quota-desktop-widget\",\"version\":\"1.5.1\"},\"capabilities\":{\"experimentalApi\":true}}}");
             string initializeResponse = ReadResponse(1, timeoutMilliseconds);
             if (initializeResponse.IndexOf("\"error\"", StringComparison.Ordinal) >= 0)
                 throw new InvalidOperationException("Codex app-server initialization failed.");
@@ -532,7 +532,6 @@ function Complete-BackgroundOperation {
             $script:statusLabel.Text = '重置请求结果未确认：右键可安全重试'
             $script:form.AccessibleDescription = $finished.Error
             $script:toolTip.SetToolTip($script:statusLabel, $finished.Error)
-            [System.Windows.Forms.MessageBox]::Show(('重置请求未能确认：' + $finished.Error + "`r`n右键重试会复用同一请求编号。"), '重置状态未确认', [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
         } else {
             $script:resetCreditCount = $null
             Update-ResetCreditMenuItem
@@ -601,7 +600,6 @@ function Complete-BackgroundOperation {
         $script:statusLabel.Text = '重置请求结果未确认：右键可安全重试'
         $script:form.AccessibleDescription = $_.Exception.Message
         $script:toolTip.SetToolTip($script:statusLabel, $_.Exception.Message)
-        [System.Windows.Forms.MessageBox]::Show(('重置请求未能确认：' + $_.Exception.Message + "`r`n右键重试会复用同一请求编号。"), '重置状态未确认', [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
     } finally {
         Update-ResetCreditMenuItem
     }
@@ -643,7 +641,6 @@ function Invoke-ResetCreditUse {
         $script:statusLabel.Text = '重置请求结果未确认：右键可安全重试'
         $script:form.AccessibleDescription = $_.Exception.Message
         $script:toolTip.SetToolTip($script:statusLabel, $_.Exception.Message)
-        [System.Windows.Forms.MessageBox]::Show(('重置请求未能确认：' + $_.Exception.Message + "`r`n右键重试会复用同一请求编号。"), '重置状态未确认', [System.Windows.Forms.MessageBoxButtons]::OK, [System.Windows.Forms.MessageBoxIcon]::Warning) | Out-Null
     } finally {
         Update-ResetCreditMenuItem
     }
