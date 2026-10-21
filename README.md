@@ -10,6 +10,7 @@ A compact, light Windows desktop widget for viewing Codex's five-hour and weekly
 - Progress bars turn red below 10% remaining and amber at 50% or less.
 - Right-click to refresh, view available reset credits, use a reset credit, toggle always-on-top, or exit. Using a reset credit requires confirmation.
 - Enable or disable automatic startup from the right-click menu. It is off by default and uses a shortcut in the current Windows user's Startup folder.
+- Only one widget instance can run at a time; launching it again while it is starting will not create a duplicate window.
 
 ## Requirements
 
