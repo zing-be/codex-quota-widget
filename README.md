@@ -11,7 +11,7 @@ A compact, light Windows desktop widget for viewing Codex's five-hour and weekly
 - Right-click to refresh, view available reset credits, use a reset credit, toggle always-on-top, or exit. Using a reset credit requires confirmation.
 - Enable or disable automatic startup from the right-click menu. It is off by default and uses a shortcut in the current Windows user's Startup folder.
 - Only one widget instance can run at a time; launching it again while it is starting will not create a duplicate window.
-- If a reset-credit request cannot be confirmed, the widget keeps the same request ID for a safe retry and shows the error in its status and tooltip instead of interrupting you with a modal dialog.
+- If a reset-credit request cannot be confirmed, the widget keeps the same request ID for a safe retry, including after restart, and shows the error in its status and tooltip instead of interrupting you with a modal dialog.
 
 ## Requirements
 
@@ -25,7 +25,7 @@ Keep `CodexQuotaWidget.ps1` and `启动 Codex 额度小窗.bat` in the same fold
 
 ## Data and behavior
 
-The widget talks to the local `codex app-server --stdio` process and reads its rate-limit data. It does not read or store login credentials and does not send telemetry to a separate service; the local Codex CLI handles its normal sign-in and network requests. The widget polls every five seconds because the app-server rate-limit API does not currently provide push updates.
+The widget talks to the local `codex app-server --stdio` process and reads its rate-limit data. It does not read or store login credentials and does not send telemetry to a separate service; the local Codex CLI handles its normal sign-in and network requests. The widget polls every five seconds because the app-server rate-limit API does not currently provide push updates. An unresolved reset request ID is kept in the current Windows user's local application data so a retry after reopening the widget can use the same ID; it is removed after Codex returns a definitive result.
 
 The app-server API is experimental and may change with future Codex CLI releases. If the widget cannot sync, confirm that Codex CLI is signed in and try restarting the widget.
 
@@ -34,4 +34,3 @@ The app-server API is experimental and may change with future Codex CLI releases
 双击“启动 Codex 额度小窗.bat”即可启动。小窗按账号实际返回显示可用额度窗口；如果账号只有每周限额，就只显示每周额度卡片并自动收紧窗口高度。右键可刷新、查看或使用重置卡、切换置顶、设置开机启动和退出。开机启动默认关闭，可以随时取消；使用重置卡前会再次确认。详细说明见 [使用说明.md](使用说明.md)。
 
 This is an unofficial community project and is not affiliated with OpenAI.
-
