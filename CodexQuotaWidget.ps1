@@ -1,4 +1,18 @@
 Add-Type -AssemblyName System.Windows.Forms
+$script:instanceMutex = $null
+$script:instanceMutexCreated = $false
+try {
+    $script:instanceMutex = [System.Threading.Mutex]::new($true, 'Local\CodexQuotaWidget-v1', [ref]$script:instanceMutexCreated)
+    if (-not $script:instanceMutexCreated) {
+        $script:instanceMutex.Dispose()
+        exit 0
+    }
+} catch {
+    if ($null -ne $script:instanceMutex) { $script:instanceMutex.Dispose() }
+    $script:instanceMutex = $null
+    $script:instanceMutexCreated = $false
+}
+
 Add-Type -AssemblyName System.Drawing
 
 $nativeSource = @"
@@ -106,7 +120,7 @@ public sealed class CodexQuotaWidgetClient : IDisposable
             if (!process.Start()) throw new InvalidOperationException("Could not start Codex CLI.");
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
-            Send("{\"id\":1,\"method\":\"initialize\",\"params\":{\"clientInfo\":{\"name\":\"codex-quota-desktop-widget\",\"version\":\"1.4.0\"},\"capabilities\":{\"experimentalApi\":true}}}");
+            Send("{\"id\":1,\"method\":\"initialize\",\"params\":{\"clientInfo\":{\"name\":\"codex-quota-desktop-widget\",\"version\":\"1.5.0\"},\"capabilities\":{\"experimentalApi\":true}}}");
             string initializeResponse = ReadResponse(1, timeoutMilliseconds);
             if (initializeResponse.IndexOf("\"error\"", StringComparison.Ordinal) >= 0)
                 throw new InvalidOperationException("Codex app-server initialization failed.");
@@ -801,6 +815,10 @@ $script:form.Add_FormClosed({
     $script:completionTimer.Dispose()
     $script:toolTip.Dispose()
     if ($null -ne $script:client) { $script:client.Dispose() }
+    if ($null -ne $script:instanceMutex) {
+        if ($script:instanceMutexCreated) { try { $script:instanceMutex.ReleaseMutex() } catch {} }
+        $script:instanceMutex.Dispose()
+    }
 })
 
 [System.Windows.Forms.Application]::EnableVisualStyles()
