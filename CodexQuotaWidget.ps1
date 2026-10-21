@@ -120,7 +120,7 @@ public sealed class CodexQuotaWidgetClient : IDisposable
             if (!process.Start()) throw new InvalidOperationException("Could not start Codex CLI.");
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
-            Send("{\"id\":1,\"method\":\"initialize\",\"params\":{\"clientInfo\":{\"name\":\"codex-quota-desktop-widget\",\"version\":\"1.5.1\"},\"capabilities\":{\"experimentalApi\":true}}}");
+            Send("{\"id\":1,\"method\":\"initialize\",\"params\":{\"clientInfo\":{\"name\":\"codex-quota-desktop-widget\",\"version\":\"1.5.2\"},\"capabilities\":{\"experimentalApi\":true}}}");
             string initializeResponse = ReadResponse(1, timeoutMilliseconds);
             if (initializeResponse.IndexOf("\"error\"", StringComparison.Ordinal) >= 0)
                 throw new InvalidOperationException("Codex app-server initialization failed.");
@@ -501,7 +501,10 @@ function Invoke-UsageUpdate {
 
 function Update-ResetCreditMenuItem {
     if ($null -eq $script:resetCreditMenuItem) { return }
-    if ($script:isRefreshing) {
+    if (-not [string]::IsNullOrWhiteSpace($script:pendingResetLoadError)) {
+        $script:resetCreditMenuItem.Text = '上次重置状态无法读取'
+        $script:resetCreditMenuItem.Enabled = $false
+    } elseif ($script:isRefreshing) {
         $script:resetCreditMenuItem.Text = '额度同步中…'
         $script:resetCreditMenuItem.Enabled = $false
     } elseif ($null -ne $script:pendingResetKey) {
@@ -517,6 +520,50 @@ function Update-ResetCreditMenuItem {
         $script:resetCreditMenuItem.Text = '使用重置卡（' + $script:resetCreditCount + ' 张可用）'
         $script:resetCreditMenuItem.Enabled = $true
     }
+}
+
+function Get-PendingResetKeyPath {
+    if ([string]::IsNullOrWhiteSpace($env:LOCALAPPDATA)) {
+        throw '无法找到当前用户的本机应用数据目录。'
+    }
+    return Join-Path (Join-Path $env:LOCALAPPDATA 'CodexQuotaWidget') 'pending-reset-id.txt'
+}
+
+function Get-PendingResetKey {
+    $path = Get-PendingResetKeyPath
+    if (-not (Test-Path -LiteralPath $path)) { return $null }
+
+    $storedKey = [System.IO.File]::ReadAllText($path).Trim()
+    $parsedKey = [Guid]::Empty
+    if (-not [Guid]::TryParse($storedKey, [ref]$parsedKey)) {
+        throw '本机保存的重置请求编号无效。'
+    }
+    return $parsedKey.ToString('D')
+}
+
+function Save-PendingResetKey {
+    param([string]$Key)
+    $parsedKey = [Guid]::Empty
+    if (-not [Guid]::TryParse($Key, [ref]$parsedKey)) {
+        throw '重置请求编号无效，未发送请求。'
+    }
+
+    $path = Get-PendingResetKeyPath
+    $directory = Split-Path -Parent $path
+    if (-not (Test-Path -LiteralPath $directory)) {
+        New-Item -ItemType Directory -Path $directory -Force | Out-Null
+    }
+    $temporaryPath = $path + '.tmp'
+    [System.IO.File]::WriteAllText($temporaryPath, $parsedKey.ToString('D'), [System.Text.UTF8Encoding]::new($false))
+    Move-Item -LiteralPath $temporaryPath -Destination $path -Force
+}
+
+function Clear-PendingResetKey {
+    $path = Get-PendingResetKeyPath
+    if (Test-Path -LiteralPath $path) {
+        Remove-Item -LiteralPath $path -Force
+    }
+    $script:pendingResetKey = $null
 }
 
 function Complete-BackgroundOperation {
@@ -568,25 +615,25 @@ function Complete-BackgroundOperation {
         $outcome = [string](Get-PropertyValue $result 'outcome')
         switch ($outcome) {
             'reset' {
-                $script:pendingResetKey = $null
+                Clear-PendingResetKey
                 Invoke-UsageUpdate
                 $script:statusLabel.ForeColor = [System.Drawing.Color]::FromArgb(32, 126, 76)
                 $script:statusLabel.Text = '重置卡已生效，正在同步额度…'
             }
             'alreadyRedeemed' {
-                $script:pendingResetKey = $null
+                Clear-PendingResetKey
                 Invoke-UsageUpdate
                 $script:statusLabel.ForeColor = [System.Drawing.Color]::FromArgb(32, 126, 76)
                 $script:statusLabel.Text = '重置卡已生效，正在同步额度…'
             }
             'noCredit' {
-                $script:pendingResetKey = $null
+                Clear-PendingResetKey
                 Invoke-UsageUpdate
                 $script:statusLabel.ForeColor = [System.Drawing.Color]::FromArgb(194, 67, 58)
                 $script:statusLabel.Text = '没有可用的重置卡'
             }
             'nothingToReset' {
-                $script:pendingResetKey = $null
+                Clear-PendingResetKey
                 Invoke-UsageUpdate
                 $script:statusLabel.ForeColor = [System.Drawing.Color]::FromArgb(168, 112, 24)
                 $script:statusLabel.Text = '当前没有符合重置条件的额度'
@@ -607,6 +654,12 @@ function Complete-BackgroundOperation {
 
 function Invoke-ResetCreditUse {
     if ($script:isRefreshing) { return }
+    if (-not [string]::IsNullOrWhiteSpace($script:pendingResetLoadError)) {
+        $script:statusLabel.ForeColor = [System.Drawing.Color]::FromArgb(194, 67, 58)
+        $script:statusLabel.Text = '上次重置状态无法读取；暂不重试'
+        $script:toolTip.SetToolTip($script:statusLabel, $script:pendingResetLoadError)
+        return
+    }
     if ($null -eq $script:pendingResetKey -and $null -eq $script:resetCreditCount) {
         Invoke-UsageUpdate
         $script:statusLabel.Text = '正在读取重置卡状态…'
@@ -625,7 +678,20 @@ function Invoke-ResetCreditUse {
     $answer = [System.Windows.Forms.MessageBox]::Show($prompt, '确认使用重置卡', [System.Windows.Forms.MessageBoxButtons]::YesNo, [System.Windows.Forms.MessageBoxIcon]::Warning)
     if ($answer -ne [System.Windows.Forms.DialogResult]::Yes) { return }
 
-    if ($null -eq $script:pendingResetKey) { $script:pendingResetKey = [Guid]::NewGuid().ToString('D') }
+    if ($null -eq $script:pendingResetKey) {
+        $newKey = [Guid]::NewGuid().ToString('D')
+        try {
+            Save-PendingResetKey $newKey
+            $script:pendingResetKey = $newKey
+        } catch {
+            $script:statusLabel.ForeColor = [System.Drawing.Color]::FromArgb(194, 67, 58)
+            $script:statusLabel.Text = '无法保存重置状态，未发送请求'
+            $script:form.AccessibleDescription = $_.Exception.Message
+            $script:toolTip.SetToolTip($script:statusLabel, $_.Exception.Message)
+            Update-ResetCreditMenuItem
+            return
+        }
+    }
     try {
         if ($null -eq $script:client) { $script:client = [CodexQuotaWidgetClient]::new(10000) }
         if (-not $script:client.StartResetConsume($script:pendingResetKey, 15000)) { throw '额度操作正在处理中，请稍后再试。' }
@@ -651,6 +717,12 @@ $script:client = $null
 $script:resetCreditCount = $null
 $script:resetCreditMenuItem = $null
 $script:pendingResetKey = $null
+$script:pendingResetLoadError = $null
+try {
+    $script:pendingResetKey = Get-PendingResetKey
+} catch {
+    $script:pendingResetLoadError = $_.Exception.Message
+}
 $script:widgetScriptPath = $PSCommandPath
 $script:form = New-Object System.Windows.Forms.Form
 $script:form.Text = 'Codex 额度概览'
@@ -820,4 +892,3 @@ $script:form.Add_FormClosed({
 
 [System.Windows.Forms.Application]::EnableVisualStyles()
 [System.Windows.Forms.Application]::Run($script:form)
-
