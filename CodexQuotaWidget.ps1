@@ -27,10 +27,35 @@ using System.Windows.Forms;
 
 public static class CodexQuotaWidgetNative
 {
+    [DllImport("user32.dll", SetLastError = true)] private static extern bool SetProcessDpiAwarenessContext(IntPtr value);
+    [DllImport("user32.dll", SetLastError = true)] private static extern bool SetProcessDPIAware();
+    [DllImport("user32.dll", SetLastError = true)] private static extern uint GetDpiForSystem();
     [DllImport("user32.dll")] private static extern bool ReleaseCapture();
     [DllImport("user32.dll")] private static extern IntPtr SendMessage(IntPtr hWnd, int message, IntPtr wParam, IntPtr lParam);
     [DllImport("gdi32.dll")] private static extern IntPtr CreateRoundRectRgn(int left, int top, int right, int bottom, int ellipseWidth, int ellipseHeight);
     [DllImport("gdi32.dll")] private static extern bool DeleteObject(IntPtr handle);
+
+    public static void EnableHighDpi()
+    {
+        try
+        {
+            if (SetProcessDpiAwarenessContext(new IntPtr(-4))) return;
+        }
+        catch (EntryPointNotFoundException) { }
+        try { SetProcessDPIAware(); }
+        catch (EntryPointNotFoundException) { }
+    }
+
+    public static double GetSystemScaleFactor()
+    {
+        try
+        {
+            uint dpi = GetDpiForSystem();
+            if (dpi >= 96) return dpi / 96.0;
+        }
+        catch (EntryPointNotFoundException) { }
+        return 1.0;
+    }
 
     public static void SetRoundedRegion(Control control, int radius)
     {
@@ -249,6 +274,20 @@ $nativeReferences = @(
     [System.Collections.Concurrent.ConcurrentQueue[string]].Assembly.Location
 ) | Select-Object -Unique
 Add-Type -TypeDefinition $nativeSource -Language CSharp -ReferencedAssemblies $nativeReferences
+[CodexQuotaWidgetNative]::EnableHighDpi()
+$script:dpiScaleFactor = [CodexQuotaWidgetNative]::GetSystemScaleFactor()
+$script:scaleFactor = 1.0
+$script:fontScaleFactor = 1.0 / $script:dpiScaleFactor
+
+function Get-ScaledPixels {
+    param([double]$Value)
+    return [int][Math]::Round($Value * $script:scaleFactor)
+}
+
+function Get-ScaledFontSize {
+    param([double]$Value)
+    return [single]($Value * $script:fontScaleFactor)
+}
 
 function Get-PropertyValue {
     param($Object, [string]$Name)
@@ -271,6 +310,8 @@ function Get-QuotaWindow {
         $title = '5 小时额度'
     } elseif ($duration -eq 10080) {
         $title = '每周额度'
+    } elseif ($duration -eq 43200) {
+        $title = '每月额度'
     } elseif ($duration -gt 0) {
         $title = "$duration 分钟额度"
     }
@@ -324,44 +365,44 @@ function Convert-UsageResponse {
 function New-QuotaCard {
     param([int]$Top, [string]$Title)
     $card = New-Object System.Windows.Forms.Panel
-    $card.Location = [System.Drawing.Point]::new(8, $Top)
-    $card.Size = [System.Drawing.Size]::new(312, 72)
+    $card.Location = [System.Drawing.Point]::new((Get-ScaledPixels 8), (Get-ScaledPixels $Top))
+    $card.Size = [System.Drawing.Size]::new((Get-ScaledPixels 312), (Get-ScaledPixels 72))
     $card.BackColor = [System.Drawing.Color]::FromArgb(255, 255, 255)
-    [CodexQuotaWidgetNative]::SetRoundedRegion($card, 15)
+    [CodexQuotaWidgetNative]::SetRoundedRegion($card, (Get-ScaledPixels 15))
 
     $titleLabel = New-Object System.Windows.Forms.Label
-    $titleLabel.Location = [System.Drawing.Point]::new(12, 9)
-    $titleLabel.Size = [System.Drawing.Size]::new(160, 20)
+    $titleLabel.Location = [System.Drawing.Point]::new((Get-ScaledPixels 12), (Get-ScaledPixels 9))
+    $titleLabel.Size = [System.Drawing.Size]::new((Get-ScaledPixels 160), (Get-ScaledPixels 20))
     $titleLabel.Text = $Title
     $titleLabel.ForeColor = [System.Drawing.Color]::FromArgb(55, 63, 57)
-    $titleLabel.Font = [System.Drawing.Font]::new('Microsoft YaHei UI', 9, [System.Drawing.FontStyle]::Bold)
+    $titleLabel.Font = [System.Drawing.Font]::new('Microsoft YaHei UI', (Get-ScaledFontSize 9.5), [System.Drawing.FontStyle]::Bold)
 
     $percentLabel = New-Object System.Windows.Forms.Label
-    $percentLabel.Location = [System.Drawing.Point]::new(232, 4)
-    $percentLabel.Size = [System.Drawing.Size]::new(68, 39)
-    $percentLabel.Text = '--%'
+    $percentLabel.Location = [System.Drawing.Point]::new((Get-ScaledPixels 232), (Get-ScaledPixels 4))
+    $percentLabel.Size = [System.Drawing.Size]::new((Get-ScaledPixels 68), (Get-ScaledPixels 39))
+    $percentLabel.Text = '--'
     $percentLabel.TextAlign = [System.Drawing.ContentAlignment]::MiddleRight
     $percentLabel.ForeColor = [System.Drawing.Color]::FromArgb(32, 126, 76)
-    $percentLabel.Font = [System.Drawing.Font]::new('Segoe UI Semibold', 22, [System.Drawing.FontStyle]::Bold)
+    $percentLabel.Font = [System.Drawing.Font]::new('Segoe UI Semibold', (Get-ScaledFontSize 22), [System.Drawing.FontStyle]::Bold)
 
     $resetLabel = New-Object System.Windows.Forms.Label
-    $resetLabel.Location = [System.Drawing.Point]::new(12, 35)
-    $resetLabel.Size = [System.Drawing.Size]::new(180, 18)
+    $resetLabel.Location = [System.Drawing.Point]::new((Get-ScaledPixels 12), (Get-ScaledPixels 35))
+    $resetLabel.Size = [System.Drawing.Size]::new((Get-ScaledPixels 180), (Get-ScaledPixels 18))
     $resetLabel.Text = '等待额度数据…'
     $resetLabel.ForeColor = [System.Drawing.Color]::FromArgb(112, 121, 114)
-    $resetLabel.Font = [System.Drawing.Font]::new('Microsoft YaHei UI', 8, [System.Drawing.FontStyle]::Regular)
+    $resetLabel.Font = [System.Drawing.Font]::new('Microsoft YaHei UI', (Get-ScaledFontSize 9), [System.Drawing.FontStyle]::Regular)
 
     $barBack = New-Object System.Windows.Forms.Panel
-    $barBack.Location = [System.Drawing.Point]::new(12, 59)
-    $barBack.Size = [System.Drawing.Size]::new(288, 4)
+    $barBack.Location = [System.Drawing.Point]::new((Get-ScaledPixels 12), (Get-ScaledPixels 59))
+    $barBack.Size = [System.Drawing.Size]::new((Get-ScaledPixels 288), (Get-ScaledPixels 4))
     $barBack.BackColor = [System.Drawing.Color]::FromArgb(231, 235, 230)
 
     $barFill = New-Object System.Windows.Forms.Panel
     $barFill.Location = [System.Drawing.Point]::new(0, 0)
-    $barFill.Size = [System.Drawing.Size]::new(0, 4)
+    $barFill.Size = [System.Drawing.Size]::new(0, (Get-ScaledPixels 4))
     $barFill.BackColor = [System.Drawing.Color]::FromArgb(47, 153, 91)
     $barBack.Controls.Add($barFill)
-    [CodexQuotaWidgetNative]::SetRoundedRegion($barBack, 2)
+    [CodexQuotaWidgetNative]::SetRoundedRegion($barBack, (Get-ScaledPixels 2))
 
     $card.Controls.AddRange(@($titleLabel, $percentLabel, $resetLabel, $barBack))
     return [pscustomobject]@{
@@ -377,14 +418,14 @@ function New-QuotaCard {
 function Set-QuotaCard {
     param($Card, $Quota)
     if ($null -eq $Quota) {
-        $Card.Percent.Text = '--%'
+        $Card.Percent.Text = '--'
         $Card.Reset.Text = '此额度窗口暂不可用'
         $Card.BarFill.Width = 0
         return
     }
 
     $Card.Title.Text = $Quota.Title
-    $Card.Percent.Text = ('{0:0}%' -f $Quota.Remaining)
+    $Card.Percent.Text = ('{0:0}' -f $Quota.Remaining)
     $Card.Reset.Text = $Quota.ResetText
     $Card.BarFill.Width = [Math]::Max(0, [Math]::Min($Card.BarBack.Width, [int][Math]::Round($Card.BarBack.Width * $Quota.Remaining / 100)))
 
@@ -397,7 +438,7 @@ function Set-QuotaCard {
     }
     $Card.Percent.ForeColor = $color
     $Card.BarFill.BackColor = $color
-    if ($Card.BarFill.Width -ge 4) { [CodexQuotaWidgetNative]::SetRoundedRegion($Card.BarFill, 2) }
+    if ($Card.BarFill.Width -ge (Get-ScaledPixels 4)) { [CodexQuotaWidgetNative]::SetRoundedRegion($Card.BarFill, (Get-ScaledPixels 2)) }
 }
 
 function Set-QuotaLayout {
@@ -415,24 +456,31 @@ function Set-QuotaLayout {
         }
 
         $window.Card.Panel.Visible = $true
-        $window.Card.Panel.Location = [System.Drawing.Point]::new(8, 21 + ($visibleCount * 78))
+        $window.Card.Panel.Location = [System.Drawing.Point]::new(
+            (Get-ScaledPixels 8),
+            (Get-ScaledPixels (21 + ($visibleCount * 78)))
+        )
         $visibleCount++
     }
 
     if ($visibleCount -eq 0) {
         $emptyCard = $script:cards[0]
         $emptyCard.Panel.Visible = $true
-        $emptyCard.Panel.Location = [System.Drawing.Point]::new(8, 21)
+        $emptyCard.Panel.Location = [System.Drawing.Point]::new((Get-ScaledPixels 8), (Get-ScaledPixels 21))
         $emptyCard.Title.Text = '额度数据'
-        $emptyCard.Percent.Text = '--%'
+        $emptyCard.Percent.Text = '--'
         $emptyCard.Reset.Text = '当前账号未返回额度窗口'
         $emptyCard.BarFill.Width = 0
         $visibleCount = 1
     }
 
-    $statusTop = 100 + (($visibleCount - 1) * 78)
-    $script:statusLabel.Location = [System.Drawing.Point]::new(13, $statusTop)
-    $script:form.Size = [System.Drawing.Size]::new(328, $statusTop + 22)
+    $statusTop = 100 + (($visibleCount - 1) * 73)
+    $script:statusLabel.Location = [System.Drawing.Point]::new((Get-ScaledPixels 13), (Get-ScaledPixels $statusTop))
+    $script:form.Size = [System.Drawing.Size]::new(
+        (Get-ScaledPixels 328),
+        (Get-ScaledPixels ($statusTop + 27))
+    )
+    [CodexQuotaWidgetNative]::SetRoundedRegion($script:form, (Get-ScaledPixels 18))
 }
 
 function Get-StartupShortcutPath {
@@ -725,66 +773,67 @@ try {
 }
 $script:widgetScriptPath = $PSCommandPath
 $script:form = New-Object System.Windows.Forms.Form
+$script:form.AutoScaleMode = [System.Windows.Forms.AutoScaleMode]::None
 $script:form.Text = 'Codex 额度概览'
 $script:form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
 $script:form.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual
-$script:form.Size = [System.Drawing.Size]::new(328, 200)
+$script:form.Size = [System.Drawing.Size]::new((Get-ScaledPixels 328), (Get-ScaledPixels 200))
 $script:form.BackColor = [System.Drawing.Color]::FromArgb(246, 247, 243)
 $script:form.ForeColor = [System.Drawing.Color]::FromArgb(39, 46, 41)
 $script:form.TopMost = $true
 $script:form.ShowInTaskbar = $false
-$script:form.Opacity = 0.90
-[CodexQuotaWidgetNative]::SetRoundedRegion($script:form, 18)
+$script:form.Opacity = 1.0
+[CodexQuotaWidgetNative]::SetRoundedRegion($script:form, (Get-ScaledPixels 18))
 
 $workingArea = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
-$script:form.Location = [System.Drawing.Point]::new(($workingArea.Right - $script:form.Width - 24), ($workingArea.Top + 24))
+$script:form.Location = [System.Drawing.Point]::new(($workingArea.Right - $script:form.Width - (Get-ScaledPixels 24)), ($workingArea.Top + (Get-ScaledPixels 24)))
 
 $header = New-Object System.Windows.Forms.Panel
 $header.Location = [System.Drawing.Point]::new(0, 0)
-$header.Size = [System.Drawing.Size]::new(328, 20)
+$header.Size = [System.Drawing.Size]::new((Get-ScaledPixels 328), (Get-ScaledPixels 20))
 $header.BackColor = [System.Drawing.Color]::FromArgb(246, 247, 243)
 
 $logo = New-Object System.Windows.Forms.Label
-$logo.Location = [System.Drawing.Point]::new(13, 3)
-$logo.Size = [System.Drawing.Size]::new(14, 14)
+$logo.Location = [System.Drawing.Point]::new((Get-ScaledPixels 13), (Get-ScaledPixels 3))
+$logo.Size = [System.Drawing.Size]::new((Get-ScaledPixels 14), (Get-ScaledPixels 14))
 $logo.Text = 'C'
 $logo.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
 $logo.BackColor = [System.Drawing.Color]::Transparent
 $logo.ForeColor = [System.Drawing.Color]::FromArgb(31, 119, 70)
-$logo.Font = [System.Drawing.Font]::new('Segoe UI Semibold', 8, [System.Drawing.FontStyle]::Bold)
+$logo.Font = [System.Drawing.Font]::new('Segoe UI Semibold', (Get-ScaledFontSize 8), [System.Drawing.FontStyle]::Bold)
 
 $heading = New-Object System.Windows.Forms.Label
-$heading.Location = [System.Drawing.Point]::new(34, 1)
-$heading.Size = [System.Drawing.Size]::new(190, 18)
+$heading.Location = [System.Drawing.Point]::new((Get-ScaledPixels 34), (Get-ScaledPixels 1))
+$heading.Size = [System.Drawing.Size]::new((Get-ScaledPixels 190), (Get-ScaledPixels 18))
 $heading.Text = 'Codex 额度概览'
 $heading.ForeColor = [System.Drawing.Color]::FromArgb(36, 43, 38)
-$heading.Font = [System.Drawing.Font]::new('Microsoft YaHei UI', 9, [System.Drawing.FontStyle]::Bold)
+$heading.Font = [System.Drawing.Font]::new('Microsoft YaHei UI', (Get-ScaledFontSize 9.5), [System.Drawing.FontStyle]::Bold)
 
 $script:refreshButton = New-Object System.Windows.Forms.Button
-$script:refreshButton.Location = [System.Drawing.Point]::new(270, 0)
-$script:refreshButton.Size = [System.Drawing.Size]::new(20, 20)
+$script:refreshButton.Location = [System.Drawing.Point]::new((Get-ScaledPixels 270), 0)
+$script:refreshButton.Size = [System.Drawing.Size]::new((Get-ScaledPixels 20), (Get-ScaledPixels 20))
 $script:refreshButton.Text = '↻'
 $script:refreshButton.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
 $script:refreshButton.FlatAppearance.BorderSize = 0
 $script:refreshButton.BackColor = [System.Drawing.Color]::FromArgb(232, 239, 232)
 $script:refreshButton.ForeColor = [System.Drawing.Color]::FromArgb(31, 119, 70)
-$script:refreshButton.Font = [System.Drawing.Font]::new('Segoe UI Symbol', 10, [System.Drawing.FontStyle]::Regular)
+$script:refreshButton.Font = [System.Drawing.Font]::new('Segoe UI Symbol', (Get-ScaledFontSize 10), [System.Drawing.FontStyle]::Regular)
 $script:refreshButton.Cursor = [System.Windows.Forms.Cursors]::Hand
 $script:refreshButton.Add_Click({ Invoke-UsageUpdate })
-[CodexQuotaWidgetNative]::SetRoundedRegion($script:refreshButton, 8)
+[CodexQuotaWidgetNative]::SetRoundedRegion($script:refreshButton, (Get-ScaledPixels 8))
 
 $closeButton = New-Object System.Windows.Forms.Button
-$closeButton.Location = [System.Drawing.Point]::new(298, 0)
-$closeButton.Size = [System.Drawing.Size]::new(20, 20)
+$closeButton.Location = [System.Drawing.Point]::new((Get-ScaledPixels 298), 0)
+$closeButton.Size = [System.Drawing.Size]::new((Get-ScaledPixels 20), (Get-ScaledPixels 20))
 $closeButton.Text = '×'
 $closeButton.FlatStyle = [System.Windows.Forms.FlatStyle]::Flat
 $closeButton.FlatAppearance.BorderSize = 0
 $closeButton.BackColor = [System.Drawing.Color]::FromArgb(232, 235, 231)
 $closeButton.ForeColor = [System.Drawing.Color]::FromArgb(91, 101, 94)
-$closeButton.Font = [System.Drawing.Font]::new('Segoe UI', 12, [System.Drawing.FontStyle]::Regular)
+$closeButton.Font = [System.Drawing.Font]::new('Segoe UI', (Get-ScaledFontSize 12), [System.Drawing.FontStyle]::Regular)
 $closeButton.Cursor = [System.Windows.Forms.Cursors]::Hand
 $closeButton.Add_Click({ $script:form.Close() })
-[CodexQuotaWidgetNative]::SetRoundedRegion($closeButton, 8)
+[CodexQuotaWidgetNative]::SetRoundedRegion($closeButton, (Get-ScaledPixels 8))
 
 $script:cards = @(
     (New-QuotaCard 21 '5 小时额度'),
@@ -792,11 +841,11 @@ $script:cards = @(
 )
 
 $script:statusLabel = New-Object System.Windows.Forms.Label
-$script:statusLabel.Location = [System.Drawing.Point]::new(13, 178)
-$script:statusLabel.Size = [System.Drawing.Size]::new(302, 18)
+$script:statusLabel.Location = [System.Drawing.Point]::new((Get-ScaledPixels 13), (Get-ScaledPixels 173))
+$script:statusLabel.Size = [System.Drawing.Size]::new((Get-ScaledPixels 302), (Get-ScaledPixels 18))
 $script:statusLabel.Text = '正在连接 Codex CLI…'
 $script:statusLabel.ForeColor = [System.Drawing.Color]::FromArgb(108, 117, 110)
-$script:statusLabel.Font = [System.Drawing.Font]::new('Microsoft YaHei UI', 8, [System.Drawing.FontStyle]::Regular)
+$script:statusLabel.Font = [System.Drawing.Font]::new('Microsoft YaHei UI', (Get-ScaledFontSize 9), [System.Drawing.FontStyle]::Regular)
 $script:toolTip = New-Object System.Windows.Forms.ToolTip
 
 $script:form.Controls.Add($header)
@@ -876,7 +925,24 @@ $script:completionTimer = New-Object System.Windows.Forms.Timer
 $script:completionTimer.Interval = 100
 $script:completionTimer.Add_Tick({ Complete-BackgroundOperation })
 $script:completionTimer.Start()
-$script:form.Add_Shown({ Invoke-UsageUpdate })
+$script:form.Add_Shown({
+    [CodexQuotaWidgetNative]::SetRoundedRegion($script:form, (Get-ScaledPixels 18))
+    [CodexQuotaWidgetNative]::SetRoundedRegion($script:refreshButton, (Get-ScaledPixels 8))
+    [CodexQuotaWidgetNative]::SetRoundedRegion($closeButton, (Get-ScaledPixels 8))
+    foreach ($card in $script:cards) {
+        [CodexQuotaWidgetNative]::SetRoundedRegion($card.Panel, (Get-ScaledPixels 15))
+        [CodexQuotaWidgetNative]::SetRoundedRegion($card.BarBack, (Get-ScaledPixels 2))
+        if ($card.BarFill.Width -ge (Get-ScaledPixels 4)) {
+            [CodexQuotaWidgetNative]::SetRoundedRegion($card.BarFill, (Get-ScaledPixels 2))
+        }
+    }
+    $workingArea = [System.Windows.Forms.Screen]::FromControl($script:form).WorkingArea
+    $script:form.Location = [System.Drawing.Point]::new(
+        ($workingArea.Right - $script:form.Width - (Get-ScaledPixels 24)),
+        ($workingArea.Top + (Get-ScaledPixels 24))
+    )
+    Invoke-UsageUpdate
+})
 $script:form.Add_FormClosed({
     $script:timer.Stop()
     $script:timer.Dispose()
@@ -892,3 +958,4 @@ $script:form.Add_FormClosed({
 
 [System.Windows.Forms.Application]::EnableVisualStyles()
 [System.Windows.Forms.Application]::Run($script:form)
+
