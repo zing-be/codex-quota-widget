@@ -333,6 +333,7 @@ function Get-QuotaWindow {
         Title = $title
         Remaining = $remaining
         ResetText = $resetText
+        DurationMins = $duration
     }
 }
 
@@ -348,18 +349,80 @@ function Convert-UsageResponse {
     $result = Get-PropertyValue $response 'result'
     $limitsById = Get-PropertyValue $result 'rateLimitsByLimitId'
     $limits = Get-PropertyValue $limitsById 'codex'
-    if ($null -eq $limits) { $limits = Get-PropertyValue $result 'rateLimits' }
+    $rootLimits = Get-PropertyValue $result 'rateLimits'
+    if ($null -eq $limits) { $limits = $rootLimits }
     if ($null -eq $limits) { throw 'Codex 没有返回额度数据。' }
 
     $primary = Get-QuotaWindow (Get-PropertyValue $limits 'primary') '5 小时额度'
     $secondary = Get-QuotaWindow (Get-PropertyValue $limits 'secondary') '每周额度'
+    $credits = Get-PropertyValue $limits 'credits'
+    if ($null -eq $credits -and $null -ne $rootLimits) { $credits = Get-PropertyValue $rootLimits 'credits' }
     $resetSummary = Get-PropertyValue $result 'rateLimitResetCredits'
     $resetCount = Get-PropertyValue $resetSummary 'availableCount'
     return [pscustomobject]@{
         Primary = $primary
         Secondary = $secondary
+        Credits = if ($null -eq $credits) { $null } else {
+            [pscustomobject]@{
+                HasCredits = Get-PropertyValue $credits 'hasCredits'
+                Unlimited = Get-PropertyValue $credits 'unlimited'
+                Balance = Get-PropertyValue $credits 'balance'
+            }
+        }
         ResetCreditCount = if ($null -eq $resetCount) { $null } else { [Math]::Max(0, [int]$resetCount) }
     }
+}
+
+function Format-CreditsBalance {
+    param($Credits)
+    if ($null -eq $Credits) { return '余额暂不可用' }
+    if ($Credits.Unlimited -eq $true) { return '不限量' }
+
+    if ($null -ne $Credits.Balance -and -not [string]::IsNullOrWhiteSpace([string]$Credits.Balance)) {
+        $balance = [decimal]0
+        $parsed = [decimal]::TryParse(
+            [string]$Credits.Balance,
+            [System.Globalization.NumberStyles]::Number,
+            [System.Globalization.CultureInfo]::InvariantCulture,
+            [ref]$balance
+        )
+        if ($parsed -and $balance -ge 0) { return ('{0:N0} credits' -f $balance) }
+        return '余额暂不可用'
+    }
+
+    if ($Credits.HasCredits -eq $false) { return '暂无积分' }
+    return '余额暂不可用'
+}
+
+function New-CreditsRow {
+    $row = New-Object System.Windows.Forms.Panel
+    $row.Location = [System.Drawing.Point]::new((Get-ScaledPixels 8), (Get-ScaledPixels 177))
+    $row.Size = [System.Drawing.Size]::new((Get-ScaledPixels 312), (Get-ScaledPixels 24))
+    $row.BackColor = $script:form.BackColor
+    $row.Visible = $false
+
+    $divider = New-Object System.Windows.Forms.Panel
+    $divider.Location = [System.Drawing.Point]::new((Get-ScaledPixels 8), 0)
+    $divider.Size = [System.Drawing.Size]::new((Get-ScaledPixels 296), (Get-ScaledPixels 1))
+    $divider.BackColor = [System.Drawing.Color]::FromArgb(224, 229, 224)
+
+    $title = New-Object System.Windows.Forms.Label
+    $title.Location = [System.Drawing.Point]::new((Get-ScaledPixels 12), (Get-ScaledPixels 2))
+    $title.Size = [System.Drawing.Size]::new((Get-ScaledPixels 130), (Get-ScaledPixels 20))
+    $title.Text = '积分余额'
+    $title.ForeColor = [System.Drawing.Color]::FromArgb(91, 101, 94)
+    $title.Font = [System.Drawing.Font]::new('Microsoft YaHei UI', (Get-ScaledFontSize 9), [System.Drawing.FontStyle]::Regular)
+
+    $value = New-Object System.Windows.Forms.Label
+    $value.Location = [System.Drawing.Point]::new((Get-ScaledPixels 136), (Get-ScaledPixels 1))
+    $value.Size = [System.Drawing.Size]::new((Get-ScaledPixels 164), (Get-ScaledPixels 21))
+    $value.Text = '余额暂不可用'
+    $value.TextAlign = [System.Drawing.ContentAlignment]::MiddleRight
+    $value.ForeColor = [System.Drawing.Color]::FromArgb(32, 126, 76)
+    $value.Font = [System.Drawing.Font]::new('Segoe UI Semibold', (Get-ScaledFontSize 9), [System.Drawing.FontStyle]::Bold)
+
+    $row.Controls.AddRange(@($divider, $title, $value))
+    return [pscustomobject]@{ Panel = $row; Value = $value }
 }
 
 function New-QuotaCard {
@@ -442,7 +505,7 @@ function Set-QuotaCard {
 }
 
 function Set-QuotaLayout {
-    param($Primary, $Secondary)
+    param($Primary, $Secondary, $Credits)
 
     $windowCards = @(
         [pscustomobject]@{ Card = $script:cards[0]; Quota = $Primary }
@@ -474,7 +537,25 @@ function Set-QuotaLayout {
         $visibleCount = 1
     }
 
-    $statusTop = 100 + (($visibleCount - 1) * 73)
+    $fiveHourQuota = $null
+    foreach ($quota in @($Primary, $Secondary)) {
+        if ($null -ne $quota -and [int]$quota.DurationMins -eq 300) {
+            $fiveHourQuota = $quota
+            break
+        }
+    }
+
+    if ($null -ne $fiveHourQuota -and $fiveHourQuota.Remaining -le 0.5) {
+        $creditsTop = 99 + (($visibleCount - 1) * 78)
+        $script:creditsRow.Panel.Location = [System.Drawing.Point]::new((Get-ScaledPixels 8), (Get-ScaledPixels $creditsTop))
+        $script:creditsRow.Value.Text = Format-CreditsBalance $Credits
+        $script:creditsRow.Panel.Visible = $true
+        $statusTop = $creditsTop + 27
+    } else {
+        $script:creditsRow.Panel.Visible = $false
+        $statusTop = 100 + (($visibleCount - 1) * 73)
+    }
+
     $script:statusLabel.Location = [System.Drawing.Point]::new((Get-ScaledPixels 13), (Get-ScaledPixels $statusTop))
     $script:form.Size = [System.Drawing.Size]::new(
         (Get-ScaledPixels 328),
@@ -650,7 +731,7 @@ function Complete-BackgroundOperation {
             $snapshot = Convert-UsageResponse $finished.Response
             Set-QuotaCard $script:cards[0] $snapshot.Primary
             Set-QuotaCard $script:cards[1] $snapshot.Secondary
-            Set-QuotaLayout $snapshot.Primary $snapshot.Secondary
+            Set-QuotaLayout $snapshot.Primary $snapshot.Secondary $snapshot.Credits
             $script:resetCreditCount = $snapshot.ResetCreditCount
             Update-ResetCreditMenuItem
             $script:statusLabel.ForeColor = [System.Drawing.Color]::FromArgb(108, 117, 110)
@@ -839,6 +920,7 @@ $script:cards = @(
     (New-QuotaCard 21 '5 小时额度'),
     (New-QuotaCard 99 '每周额度')
 )
+$script:creditsRow = New-CreditsRow
 
 $script:statusLabel = New-Object System.Windows.Forms.Label
 $script:statusLabel.Location = [System.Drawing.Point]::new((Get-ScaledPixels 13), (Get-ScaledPixels 173))
@@ -855,6 +937,7 @@ $script:form.Controls.Add($script:refreshButton)
 $script:form.Controls.Add($closeButton)
 $script:form.Controls.Add($script:cards[0].Panel)
 $script:form.Controls.Add($script:cards[1].Panel)
+$script:form.Controls.Add($script:creditsRow.Panel)
 $script:form.Controls.Add($script:statusLabel)
 
 $dragHandler = {
